@@ -10,6 +10,8 @@
 #include "slap.h"
 #include "slap-config.h"
 
+#include "fork.h"
+
 
 typedef struct bind_script_info {
 	char *script_path;
@@ -37,8 +39,13 @@ static ConfigOCs bind_script_ocs[] = {
 
 static int bind_script_bind_response(Operation *op, SlapReply *rs)
 {
+	bind_script_info *bsi = (bind_script_info*)op->o_callback->sc_private;
+
 	if (rs->sr_err != LDAP_SUCCESS)
 		return SLAP_CB_CONTINUE;
+
+	if (!bsi->script_path || !bsi->script_path[0])
+		return -1;
 
 	return SLAP_CB_CONTINUE;
 }
@@ -46,11 +53,18 @@ static int bind_script_bind_response(Operation *op, SlapReply *rs)
 
 static int bind_script_bind(Operation *op, SlapReply *rs)
 {
+	slap_overinst *on = (slap_overinst*)op->o_bd->bd_info;
+	bind_script_info *bsi = (bind_script_info*)on->on_bi.bi_private;
 	slap_callback *cb;
-	slap_overinst *on = (slap_overinst *) op->o_bd->bd_info;
+
+	if (!bsi->script_path || !bsi->script_path[0]) {
+		send_ldap_error(op, rs, LDAP_UNWILLING_TO_PERFORM, "no bind script provided");
+		return -1;
+	}
 
 	cb = op->o_tmpcalloc(sizeof(slap_callback), 1, op->o_tmpmemctx);
 	cb->sc_response = bind_script_bind_response;
+	cb->sc_private = bsi;
 	cb->sc_next = op->o_callback->sc_next;
 	op->o_callback->sc_next = cb;
 
@@ -58,14 +72,43 @@ static int bind_script_bind(Operation *op, SlapReply *rs)
 }
 
 
+static int bind_script_db_init(BackendDB *be, ConfigReply *cr)
+{
+	slap_overinst *on = (slap_overinst*)be->bd_info;
+
+	on->on_bi.bi_private = ch_calloc(1, sizeof(bind_script_info));;
+
+	return 0;
+}
+
+static int bind_script_db_destroy(BackendDB *be, ConfigReply *cr)
+{
+	slap_overinst *on = (slap_overinst*)be->bd_info;
+	bind_script_info *bsi = (bind_script_info*)on->on_bi.bi_private;
+
+	free(bsi->script_path);
+	free(bsi);
+
+	return 0;
+}
+
 static slap_overinst bind_script;
 
 int bind_script_initialize()
 {
+	int res;
+
 	bind_script.on_bi.bi_type = "bind_script";
 	bind_script.on_bi.bi_flags = SLAPO_BFLAG_SINGLE;
 
+	bind_script.on_bi.bi_db_init = bind_script_db_init;
+	bind_script.on_bi.bi_db_destroy = bind_script_db_destroy;
+
 	bind_script.on_bi.bi_op_bind = bind_script_bind;
+
+	res = config_register_schema(bind_script_cfg, bind_script_ocs);
+	if (res)
+		return res;
 
 	return overlay_register(&bind_script);
 }

@@ -17,7 +17,6 @@ LDAP_LIB = $(LDAP_BUILD)/libraries/libldap/libldap.la \
 	$(LDAP_BUILD)/libraries/liblber/liblber.la
 
 LIBTOOL = $(LDAP_BUILD)/libtool
-INSTALL = /usr/bin/install
 CC = gcc
 OPT = -g -O2
 DEFS = -DSLAPD_OVER_BIND_SCRIPT=SLAPD_MOD_DYNAMIC
@@ -42,7 +41,7 @@ moduledir = $(libexecdir)$(ldap_subdir)
 
 all: $(PROGRAMS)
 
-bind_script.la: bind_script.lo
+bind_script.la: bind_script.lo fork.lo
 	$(LIBTOOL) --mode=link $(CC) $(LDFLAGS) -version-info $(LTVER) -rpath $(moduledir) -module -o $@ $? $(LIBS)
 
 clean:
