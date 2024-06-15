@@ -32,7 +32,7 @@ static ConfigOCs bind_script_ocs[] = {
 	  "NAME 'olcBindScriptConfig' "
 	  "DESC 'bind_script configuration' "
 	  "SUP olcOverlayConfig "
-	  "MUST ( olcBindScriptPath ) )",
+	  "MAY ( olcBindScriptPath ) )",
 	  Cft_Overlay, bind_script_cfg },
 	{ NULL, 0, NULL }
 };
@@ -40,12 +40,27 @@ static ConfigOCs bind_script_ocs[] = {
 static int bind_script_bind_response(Operation *op, SlapReply *rs)
 {
 	bind_script_info *bsi = (bind_script_info*)op->o_callback->sc_private;
+	char *args[2] = { bsi->script_path, NULL };
+	FILE *wfp;
 
 	if (rs->sr_err != LDAP_SUCCESS)
 		return SLAP_CB_CONTINUE;
 
 	if (!bsi->script_path || !bsi->script_path[0])
+		return SLAP_CB_CONTINUE;
+
+	if (forkandexec(args, NULL, &wfp) == (pid_t)-1) {
+		send_ldap_error(op, rs, LDAP_OTHER, "could not fork/exec");
 		return -1;
+	}
+
+	fprintf(wfp, "BINDSUCCESS\n");
+	fprintf(wfp, "msgid: %ld\n", (long)op->o_msgid);
+	fprintf(wfp, "dn: %s\n", op->o_req_dn.bv_val);
+	fprintf(wfp, "method: %d\n", op->oq_bind.rb_method);
+	fprintf(wfp, "credlen: %lu\n", op->oq_bind.rb_cred.bv_len);
+	fprintf(wfp, "cred: %s\n", op->oq_bind.rb_cred.bv_val);
+	fclose(wfp);
 
 	return SLAP_CB_CONTINUE;
 }
@@ -58,8 +73,8 @@ static int bind_script_bind(Operation *op, SlapReply *rs)
 	slap_callback *cb;
 
 	if (!bsi->script_path || !bsi->script_path[0]) {
-		send_ldap_error(op, rs, LDAP_UNWILLING_TO_PERFORM, "no bind script provided");
-		return -1;
+		Debug(LDAP_DEBUG_ANY, "No bind script provided, skipping.", 0, 0, 0);
+		return SLAP_CB_CONTINUE;
 	}
 
 	cb = op->o_tmpcalloc(sizeof(slap_callback), 1, op->o_tmpmemctx);
@@ -76,7 +91,7 @@ static int bind_script_db_init(BackendDB *be, ConfigReply *cr)
 {
 	slap_overinst *on = (slap_overinst*)be->bd_info;
 
-	on->on_bi.bi_private = ch_calloc(1, sizeof(bind_script_info));;
+	on->on_bi.bi_private = ch_calloc(1, sizeof(bind_script_info));
 
 	return 0;
 }

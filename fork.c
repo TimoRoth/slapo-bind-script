@@ -49,7 +49,7 @@ forkandexec(
 	int	p2c[2] = { -1, -1 }, c2p[2];
 	pid_t	pid;
 
-	if ( pipe( p2c ) != 0 || pipe( c2p ) != 0 ) {
+	if ( pipe( p2c ) != 0 || (rfp && pipe( c2p ) != 0) ) {
 		Debug( LDAP_DEBUG_ANY, "pipe failed\n", 0, 0, 0 );
 		close( p2c[0] );
 		close( p2c[1] );
@@ -75,16 +75,22 @@ forkandexec(
 		 *
 		 * If so, configure --without-threads.
 		 */
-		if ( dup2( p2c[0], 0 ) == -1 || dup2( c2p[1], 1 ) == -1 ) {
-			Debug( LDAP_DEBUG_ANY, "dup2 failed\n", 0, 0, 0 );
+		if ( rfp && dup2( c2p[1], 1 ) == -1 ) {
+			Debug( LDAP_DEBUG_ANY, "c2p dup2 failed\n", 0, 0, 0 );
+			exit( EXIT_FAILURE );
+		}
+		if ( dup2( p2c[0], 0 ) == -1 ) {
+			Debug( LDAP_DEBUG_ANY, "p2c dup2 failed\n", 0, 0, 0 );
 			exit( EXIT_FAILURE );
 		}
 	}
 	close( p2c[0] );
-	close( c2p[1] );
+	if ( rfp )
+		close( c2p[1] );
 	if ( pid <= 0 ) {
 		close( p2c[1] );
-		close( c2p[0] );
+		if ( rfp )
+			close( c2p[0] );
 	}
 	switch ( pid ) {
 	case 0:
@@ -99,13 +105,13 @@ forkandexec(
 	}
 
 	/* parent */
-	if ( (*rfp = fdopen( c2p[0], "r" )) == NULL || (*wfp = fdopen( p2c[1],
+	if ( (rfp && (*rfp = fdopen( c2p[0], "r" )) == NULL) || (*wfp = fdopen( p2c[1],
 	    "w" )) == NULL ) {
 		Debug( LDAP_DEBUG_ANY, "fdopen failed\n", 0, 0, 0 );
-		if ( *rfp ) {
+		if ( rfp && *rfp ) {
 			fclose( *rfp );
 			*rfp = NULL;
-		} else {
+		} else if ( rfp ) {
 			close( c2p[0] );
 		}
 		close( p2c[1] );
