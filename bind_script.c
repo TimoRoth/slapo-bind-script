@@ -102,6 +102,9 @@ static int bind_script_passwd_exop(Operation *op, SlapReply *rs)
         if (strncasecmp(line, "OK", 2) == 0) {
             res = LDAP_SUCCESS;
             break;
+        } else if (strncasecmp(line, "ERR", 3) == 0) {
+            res = LDAP_OTHER;
+            break;
         }
 
         res = SLAP_CB_CONTINUE;
