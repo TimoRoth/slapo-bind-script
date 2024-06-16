@@ -121,6 +121,7 @@ int bind_script_initialize()
 
 	bind_script.on_bi.bi_op_bind = bind_script_bind;
 
+	bind_script.on_bi.bi_cf_ocs = bind_script_ocs;
 	res = config_register_schema(bind_script_cfg, bind_script_ocs);
 	if (res)
 		return res;
