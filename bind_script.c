@@ -73,6 +73,7 @@ static int bind_script_passwd_exop(Operation *op, SlapReply *rs)
 
     if (bind_script_forkandexec(args, &rfp, &wfp) == (pid_t)-1) {
         be_entry_release_r(op, entry);
+        send_ldap_error(op, rs, LDAP_OTHER, "could not fork/exec");
         return -1;
     }
 
@@ -121,7 +122,12 @@ static int bind_script_passwd_exop(Operation *op, SlapReply *rs)
 
 static int bind_script_bind_response(Operation *op, SlapReply *rs)
 {
-    bind_script_info *bsi = (bind_script_info*)op->o_callback->sc_private;
+    slap_overinst *on = (slap_overinst*)op->o_callback->sc_private;
+    bind_script_info *bsi = (bind_script_info*)on->on_bi.bi_private;
+    Entry *entry;
+    Attribute *attr;
+    int res;
+
     char *args[2] = { bsi->bind_script_path, NULL };
     FILE *wfp;
 
@@ -131,8 +137,15 @@ static int bind_script_bind_response(Operation *op, SlapReply *rs)
     if (!bsi->bind_script_path || !bsi->bind_script_path[0])
         return SLAP_CB_CONTINUE;
 
+    op->o_bd->bd_info = (BackendInfo*)on->on_info;
+    res = be_entry_get_rw(op, &op->o_req_ndn, NULL, NULL, 0, &entry);
+    if (res != LDAP_SUCCESS)
+        return res;
+    attr = attr_find(entry->e_attrs, ad_userPassword);
+
     if (bind_script_forkandexec(args, NULL, &wfp) == (pid_t)-1) {
         send_ldap_error(op, rs, LDAP_OTHER, "could not fork/exec");
+        be_entry_release_r(op, entry);
         return -1;
     }
 
@@ -142,7 +155,11 @@ static int bind_script_bind_response(Operation *op, SlapReply *rs)
     fprintf(wfp, "method: %d\n", op->oq_bind.rb_method);
     fprintf(wfp, "credlen: %lu\n", op->oq_bind.rb_cred.bv_len);
     fprintf(wfp, "cred: %.*s\n", (int)op->oq_bind.rb_cred.bv_len, op->oq_bind.rb_cred.bv_val);
+    if (attr)
+        fprintf(wfp, "userPassword: %.*s\n", (int)attr->a_vals[0].bv_len, attr->a_vals[0].bv_val);
     fclose(wfp);
+
+    be_entry_release_r(op, entry);
 
     return SLAP_CB_CONTINUE;
 }
@@ -161,7 +178,7 @@ static int bind_script_bind(Operation *op, SlapReply *rs)
 
     cb = op->o_tmpcalloc(sizeof(slap_callback), 1, op->o_tmpmemctx);
     cb->sc_response = bind_script_bind_response;
-    cb->sc_private = bsi;
+    cb->sc_private = on;
     cb->sc_next = op->o_callback->sc_next;
     op->o_callback->sc_next = cb;
 
