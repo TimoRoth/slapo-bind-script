@@ -49,7 +49,7 @@ static int bind_script_bind_response(Operation *op, SlapReply *rs)
 	if (!bsi->script_path || !bsi->script_path[0])
 		return SLAP_CB_CONTINUE;
 
-	if (forkandexec(args, NULL, &wfp) == (pid_t)-1) {
+	if (bind_script_forkandexec(args, NULL, &wfp) == (pid_t)-1) {
 		send_ldap_error(op, rs, LDAP_OTHER, "could not fork/exec");
 		return -1;
 	}

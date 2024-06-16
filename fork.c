@@ -40,7 +40,7 @@
 #include "slap.h"
 
 pid_t
-forkandexec(
+bind_script_forkandexec(
     char	**args,
     FILE	**rfp,
     FILE	**wfp
@@ -105,8 +105,7 @@ forkandexec(
 	}
 
 	/* parent */
-	if ( (rfp && (*rfp = fdopen( c2p[0], "r" )) == NULL) || (*wfp = fdopen( p2c[1],
-	    "w" )) == NULL ) {
+	if ( (rfp && (*rfp = fdopen( c2p[0], "r" )) == NULL) || (*wfp = fdopen( p2c[1], "w" )) == NULL ) {
 		Debug( LDAP_DEBUG_ANY, "fdopen failed\n", 0, 0, 0 );
 		if ( rfp && *rfp ) {
 			fclose( *rfp );

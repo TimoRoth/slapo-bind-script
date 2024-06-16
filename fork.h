@@ -3,7 +3,7 @@
 
 LDAP_BEGIN_DECL
 
-extern pid_t forkandexec LDAP_P((
+extern pid_t bind_script_forkandexec LDAP_P((
 	char **args,
 	FILE **rfp,
 	FILE **wfp));
