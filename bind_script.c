@@ -95,19 +95,22 @@ static int bind_script_passwd_exop(Operation *op, SlapReply *rs)
             if (errno == EINTR)
                 continue;
 
-            res = SLAP_CB_CONTINUE;
+            res = LDAP_UNAVAILABLE;
             break;
         }
 
         if (strncasecmp(line, "OK", 2) == 0) {
             res = LDAP_SUCCESS;
             break;
-        } else if (strncasecmp(line, "ERR", 3) == 0) {
-            res = LDAP_OTHER;
+        } else if (strncasecmp(line, "CONTINUE", 8) == 0) {
+            res = SLAP_CB_CONTINUE;
+            break;
+        } else if (strncasecmp(line, "BYPASS", 6) == 0) {
+            res = SLAP_CB_BYPASS;
             break;
         }
 
-        res = SLAP_CB_CONTINUE;
+        res = LDAP_OTHER;
         break;
     }
 
