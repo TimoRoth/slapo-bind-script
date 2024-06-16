@@ -44,16 +44,73 @@ static ConfigOCs bind_script_ocs[] = {
     { NULL, 0, NULL }
 };
 
+static AttributeDescription *ad_userPassword;
+
+
 static int bind_script_passwd_exop(Operation *op, SlapReply *rs)
 {
-    bind_script_info *bsi = (bind_script_info*)op->o_callback->sc_private;
+    slap_overinst *on = (slap_overinst*)op->o_bd->bd_info;
+    bind_script_info *bsi = (bind_script_info*)on->on_bi.bi_private;
+    req_pwdexop_s *qpw = &op->oq_pwdexop;
+    Entry *entry;
+    Attribute *attr;
+    int res;
+
     char *args[2] = { bsi->passwd_script_path, NULL };
-    FILE *wfp;
+    FILE *rfp, *wfp;
 
     if (!bsi->passwd_script_path || !bsi->passwd_script_path[0])
         return SLAP_CB_CONTINUE;
 
-    return SLAP_CB_CONTINUE;
+    if (ber_bvcmp(&slap_EXOP_MODIFY_PASSWD, &op->ore_reqoid))
+        return SLAP_CB_CONTINUE;
+
+    op->o_bd->bd_info = (BackendInfo*)on->on_info;
+    res = be_entry_get_rw(op, &op->o_req_ndn, NULL, NULL, 0, &entry);
+    if (res != LDAP_SUCCESS)
+        return res;
+    attr = attr_find(entry->e_attrs, ad_userPassword);
+
+    if (bind_script_forkandexec(args, &rfp, &wfp) == (pid_t)-1) {
+        be_entry_release_r(op, entry);
+        return -1;
+    }
+
+    fprintf(wfp, "PASSWD\n");
+    fprintf(wfp, "msgid: %ld\n", (long)op->o_msgid);
+    fprintf(wfp, "dn: %s\n", op->o_req_dn.bv_val);
+    fprintf(wfp, "oldCred: %.*s\n", (int)qpw->rs_old.bv_len, qpw->rs_old.bv_val);
+    fprintf(wfp, "newCred: %.*s\n", (int)qpw->rs_new.bv_len, qpw->rs_new.bv_val);
+    if (attr)
+        fprintf(wfp, "userPassword: %.*s\n", (int)attr->a_vals[0].bv_len, attr->a_vals[0].bv_val);
+    fclose(wfp);
+    be_entry_release_r(op, entry);
+
+    res = SLAP_CB_CONTINUE;
+    while(!feof(rfp)) {
+        char line[64];
+        errno = 0;
+
+        if (fgets(line, sizeof(line), rfp) == NULL) {
+            if (errno == EINTR)
+                continue;
+
+            res = SLAP_CB_CONTINUE;
+            break;
+        }
+
+        if (strncasecmp(line, "OK", 2) == 0) {
+            res = SLAP_CB_BYPASS;
+            break;
+        }
+
+        res = SLAP_CB_CONTINUE;
+        break;
+    }
+
+    fclose(rfp);
+
+    return res;
 }
 
 static int bind_script_bind_response(Operation *op, SlapReply *rs)
@@ -75,10 +132,10 @@ static int bind_script_bind_response(Operation *op, SlapReply *rs)
 
     fprintf(wfp, "BINDSUCCESS\n");
     fprintf(wfp, "msgid: %ld\n", (long)op->o_msgid);
-    fprintf(wfp, "dn: %s\n", op->o_req_dn.bv_val);
+    fprintf(wfp, "dn: %.*s\n", (int)op->o_req_dn.bv_len, op->o_req_dn.bv_val);
     fprintf(wfp, "method: %d\n", op->oq_bind.rb_method);
     fprintf(wfp, "credlen: %lu\n", op->oq_bind.rb_cred.bv_len);
-    fprintf(wfp, "cred: %s\n", op->oq_bind.rb_cred.bv_val);
+    fprintf(wfp, "cred: %.*s\n", (int)op->oq_bind.rb_cred.bv_len, op->oq_bind.rb_cred.bv_val);
     fclose(wfp);
 
     return SLAP_CB_CONTINUE;
@@ -109,10 +166,16 @@ static int bind_script_bind(Operation *op, SlapReply *rs)
 static int bind_script_db_init(BackendDB *be, ConfigReply *cr)
 {
     slap_overinst *on = (slap_overinst*)be->bd_info;
+    const char *err;
+
+    if (slap_str2ad("userPassword", &ad_userPassword, &err) != LDAP_SUCCESS) {
+        Debug(LDAP_DEBUG_ANY, "Failed finding userPassword attr: %s\n", err, 0, 0);
+        return -1;
+    }
 
     on->on_bi.bi_private = ch_calloc(1, sizeof(bind_script_info));
 
-    return 0;
+    return LDAP_SUCCESS;
 }
 
 static int bind_script_db_destroy(BackendDB *be, ConfigReply *cr)
@@ -124,7 +187,7 @@ static int bind_script_db_destroy(BackendDB *be, ConfigReply *cr)
     free(bsi->passwd_script_path);
     free(bsi);
 
-    return 0;
+    return LDAP_SUCCESS;
 }
 
 static slap_overinst bind_script;
