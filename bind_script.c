@@ -100,7 +100,7 @@ static int bind_script_passwd_exop(Operation *op, SlapReply *rs)
         }
 
         if (strncasecmp(line, "OK", 2) == 0) {
-            res = SLAP_CB_BYPASS;
+            res = LDAP_SUCCESS;
             break;
         }
 
