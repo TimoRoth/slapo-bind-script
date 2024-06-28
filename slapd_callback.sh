@@ -43,7 +43,7 @@ if [[ "$OP" == "PASSWD" ]]; then
 		exit 1
 	fi
 
-	if ! printf "%s\n%s\n" "$NEWPW" "$NEWPW" | kadmin.ldap cpw "${PWHASH:6}" >/tmp/kadmin_log 2>&1; then
+	if ! printf "%s\n%s\n" "$NEWPW" "$NEWPW" | kadmin.ldap cpw "${PWHASH:6}"; then
 		echo ERR
 		exit 1
 	fi
