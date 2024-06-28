@@ -47,12 +47,19 @@ bind_script.la: bind_script.lo fork.lo
 clean:
 	rm -rf *.o *.lo *.la .libs
 
-install: install-lib FORCE
+install: uninstall-lib install-lib FORCE
+
+uninstall: uninstall-lib FORCE
 
 install-lib: $(PROGRAMS)
 	mkdir -p $(DESTDIR)$(moduledir)
 	for p in $(PROGRAMS) ; do \
 		$(LIBTOOL) --mode=install cp $$p $(DESTDIR)$(moduledir) ; \
+	done
+
+uninstall-lib: $(PROGRAMS)
+	for p in $(PROGRAMS) ; do \
+		$(LIBTOOL) --mode=uninstall rm -f $(DESTDIR)$(moduledir)/$$p ; \
 	done
 
 FORCE:
